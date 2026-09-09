@@ -1,0 +1,7 @@
+pyrofork
+requests
+pytz
+bs4
+tgcrypto
+ytmusicapi>=1.9,<2
+cryptography

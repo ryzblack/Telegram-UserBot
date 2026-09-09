@@ -25,7 +25,7 @@
 ```bash
 git clone https://github.com/Zover1337/Telegram-UserBot
 cd Telegram-UserBot
-pip install pyrofork requests pytz bs4 tgcrypto
+pip install pyrofork requests pytz bs4 tgcrypto "ytmusicapi>=1.9,<2" cryptography
 ```
 *(Примечание: tgcrypto рекомендуется для ускорения работы Pyrogram)*
 
@@ -50,6 +50,44 @@ python3 install.py
 python3 main.py
 ```
 
+## 🐳 Запуск через Docker Compose
+
+Вместо systemd можно поднять бота в Docker. Контейнер перезапускается сам после падения и перезагрузки хоста (`restart: unless-stopped`).
+
+Понадобятся Docker и плагин docker compose (`docker compose version` для проверки).
+
+**1. Настройка конфига**
+```bash
+cp config.example.py config.py
+```
+Впишите `api_id`, `api_hash` и данные для Spotify/YouTube Music, если нужны эти модули.
+
+**2. Сборка образа**
+```bash
+docker compose build
+```
+
+**3. Авторизация аккаунта**
+Первый вход интерактивный: контейнер спросит номер телефона и код из Telegram.
+```bash
+docker compose run --rm userbot python install.py
+```
+После этого в корне проекта появится `my_userbot.session`. На вопрос про systemd ответьте `n`.
+
+**4. Запуск в фоне**
+```bash
+docker compose up -d
+```
+
+**Полезные команды:**
+```bash
+docker compose logs -f     # смотреть логи
+docker compose restart     # перезапустить бота
+docker compose down        # остановить
+```
+
+`config.py`, `.session`, скачанные через `.dlmod` модули и токены лежат в папке проекта на хосте (весь проект монтируется в контейнер), поэтому переживают пересоздание контейнера. Не коммитьте эти файлы: `.gitignore` уже исключает их.
+
 ## 🧩 Управление модулями через Telegram
 
 Благодаря встроенному `manager.py`, вы можете расширять функционал бота "на лету":
@@ -68,6 +106,8 @@ python3 main.py
 | `.usd` / `.ton` | Просмотр актуальных курсов валют и криптовалют. |
 | `.spotify` | Узнать текущий играющий трек в Spotify и получить ссылки на другие площадки. |
 | `.rand_anec` / `.poland` | Развлекательные модули. |
+| `.youtube` | Последний трек из YouTube Music + ссылки на другие платформы. |
+| `.youtube auth` | Авторизация YouTube Music по ссылке. |
 
 > Юзербот реагирует **только на ваши сообщения** (`filters.me`), поэтому никто другой не сможет использовать эти команды.
 
@@ -128,6 +168,59 @@ else:
 ```
 
 Скопируйте полученный `refresh_token` и вставьте его в `SPOTIFY_REFRESH_TOKEN` в `config.py`.
+
+
+## ▶️ Настройка YouTube Music
+
+> **Важно:** у YouTube Music нет API «что играет прямо сейчас» — такого эндпоинта не существует.
+> Поэтому `.youtube` показывает **последний трек из истории прослушивания**. На практике это и есть
+> то, что вы слушаете, но если музыка остановлена час назад — бот всё равно покажет этот трек.
+
+### Шаг 1. OAuth-клиент в Google Cloud
+
+1. Откройте [Google Cloud Console](https://console.cloud.google.com/) и создайте проект.
+2. **APIs & Services → Library** → включите **YouTube Data API v3**.
+3. **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
+   Тип приложения — **TVs and Limited Input devices**.
+4. Скопируйте **Client ID** и **Client Secret** в `config.py` (`YTMUSIC_CLIENT_ID`, `YTMUSIC_CLIENT_SECRET`).
+5. **OAuth consent screen → опубликуйте приложение** (Publish app).
+   Если оставить статус *Testing*, Google будет **аннулировать refresh token каждые 7 дней**,
+   и `.youtube` придётся переавторизовывать раз в неделю.
+
+### Шаг 2. Авторизация
+
+Отправьте в **Избранное** (Saved Messages) команду:
+
+```text
+.youtube auth
+```
+
+Бот пришлёт ссылку с уже подставленным кодом — откройте её, подтвердите доступ,
+и сообщение сменится на `✅ YouTube Music авторизован`. Всё, токен сохранён.
+
+Ссылка живёт 5 минут. Если не успели — просто повторите команду.
+Повторный `.youtube auth` в любой момент перезаписывает токен — это же и способ переавторизации.
+
+### Хранение токена
+
+Токен YouTube Music шифруется (Fernet) и лежит в `ytmusic_auth.enc` в папке проекта.
+Ключ шифрования генерируется автоматически при первой авторизации и сохраняется в
+`~/.local/share/tg-userbot/ytmusic.key` с правами `0600` — **вне папки проекта**,
+чтобы он не попал в архив репозитория или случайную выгрузку.
+
+Ключ можно задать через переменную окружения `YTMUSIC_KEY` (например, через
+`Environment=` в systemd-юните) — тогда файл ключа не используется.
+
+Если ключ потерян или файл повреждён, `.youtube` просто скажет «не авторизован» —
+достаточно выполнить `.youtube auth` заново.
+
+> **Что не шифруется:** `api_hash`, `SPOTIFY_CLIENT_SECRET` и `YTMUSIC_CLIENT_SECRET`
+> остаются открытым текстом в `config.py` — защищать их нечем, любой ключ лежал бы
+> на том же диске. `config.py` находится в `.gitignore`.
+>
+> Отдельно: шифрование на диске не защищает от вредоносного модуля, установленного
+> через `.dlmod` — такой модуль работает в том же процессе и может прочитать токен
+> напрямую. Здесь работает подтверждение по SHA256 в `.dlmod`, а не шифрование.
 
 <br>
 

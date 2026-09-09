@@ -5,3 +5,9 @@ my_userbot.session
 __pycache__/
 *.py[cod]
 *$py.class
+ytmusic_auth.enc
+.omc
+.agents/
+.claude/
+.superpowers/
+userbot.service
